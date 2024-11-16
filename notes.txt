@@ -1,0 +1,75 @@
+spark structured streaming
+
+-micro-batching
+- DStream in spark is a continuous streams of data
+
+RDDs - low level API
+
+- Uses the dataframes as its structured or dataset APIs (has higher abstract layer)
+
+- built on top of Spark SQL
+- Consistent
+- Fault-tolerant
+
+input soources
+- file source 
+- kafka
+- Socket source
+- data stream reader - supports formats like csv, text, JSON
+
+Sink
+- store the output to external file systems
+- console
+- memory (in-memory table)
+- file
+- kafka
+
+output modes
+- append (only newly produced rows)
+- update (present only updated rows)
+- complete (everything to be presented)
+
+
+methods for input
+spark.readStream
+.format("socket")
+.option("host", "localhost")
+.option("port", 9999)
+.load()
+
+spark.readStream
+.format("Kafka")
+.option("kafka.bootstrap.server", "IP of the server")
+.option("subscribe", "json_topic")
+.option("startingOffsets", "earliest")
+.load()
+
+methods for output
+count.writeStream
+.format("console")
+.outputMode("complete")
+.start()
+.awaitTermination()
+
+count.writeStream
+.format("kafka")
+.outputMode("append")
+.option("kafka.bootstrap.server", "IP of the server")
+.option("subscribe", "json_topic")
+.start()
+.awaitTermination()
+
+
+==========================================================================================
+
+pyspark streaming project
+youtube video comments analysis
+- stream comments of a youtube video
+- store comments in system 
+- load comments using flask
+- display comments on UI/ sentiment analysis
+
+pre-requisite
+- python
+- pyspark
+- flask

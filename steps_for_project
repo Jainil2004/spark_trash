@@ -1,0 +1,11 @@
+phase 1 
+create a virtual environment
+activate the environment
+install all the dependencies
+after installing freeze all the packages
+
+phase 2 
+fetch youtube video comments - using python script
+go to google developer console and start using that for finding the youtube v3 API
+create a python script to fetch the comments and process them.
+create a python script to stream the comments
