@@ -1,0 +1,147 @@
+Great! Now that we've got Spark structured streaming working with data typed into the terminal via nc, the next step is to integrate YouTube comment fetching into this streaming pipeline. We want to stream the comments, not process them in batch (as in the current youtube_fetch_comments.py), so we need to adjust the flow a bit.
+Plan
+
+    YouTube Comments Streaming:
+        Instead of fetching comments in a batch (like in the fetch_comments function), we’ll stream comments from YouTube. For this, we can periodically fetch comments from YouTube and push them to the socket (localhost:9999) as new data streams.
+    Spark Structured Streaming:
+        Spark will listen to the socket (as we have already set up) and process the incoming data (YouTube comments).
+
+Step-by-Step Integration
+1. Modify youtube_fetch_comments.py to allow streaming
+
+We want to change the fetch_comments function so that it fetches comments continuously in intervals and pushes them to the socket. You can simulate streaming by fetching comments in intervals (e.g., every 10 seconds).
+
+Here’s how you can modify it:
+Updated youtube_fetch_comments.py (with streaming logic)
+
+import requests
+import time
+import socket
+
+def fetch_and_stream_comments(api_key, video_id, socket_connection):
+    """
+    Fetch YouTube comments periodically and send them to a socket connection.
+    """
+    URL = "https://www.googleapis.com/youtube/v3/commentThreads"
+    params = {
+        "part": "snippet",
+        "videoId": video_id,
+        "key": api_key,
+        "maxResults": 20  # Number of comments to fetch per request
+    }
+
+    while True:
+        # Make the API call to fetch comments
+        response = requests.get(URL, params=params)
+        
+        if response.status_code == 200:
+            comments = [item["snippet"]["topLevelComment"]["snippet"]["textDisplay"] for item in response.json().get("items", [])]
+            # Send each comment to the socket
+            for comment in comments:
+                socket_connection.send((comment + "\n").encode())  # Send comment as new line
+
+            print(f"Sent {len(comments)} comments to the socket.")
+        else:
+            print(f"Error fetching comments: {response.json()}")
+
+        # Sleep for a while before fetching the next batch of comments
+        time.sleep(10)  # Adjust the frequency as needed (e.g., every 10 seconds)
+
+Key Changes:
+
+    The function now continuously fetches comments from YouTube and sends them to the socket (localhost:9999).
+    We use time.sleep(10) to simulate fetching comments at regular intervals. You can adjust this sleep duration as needed.
+
+2. Modify spark_structure_streaming.py to integrate the YouTube comment stream
+
+Now we need to modify spark_structure_streaming.py to listen to the socket where YouTube comments are being sent and process them in real-time using Spark structured streaming.
+Updated spark_structure_streaming.py (with YouTube comment streaming)
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import explode, split
+import socket
+from youtube_fetch_comments import fetch_and_stream_comments
+import threading
+
+def start_spark_streaming():
+    # Start Spark session
+    spark = SparkSession.builder.appName("StreamApp").getOrCreate()
+
+    # Read data from the socket on localhost:9999
+    comment_stream = spark.readStream \
+        .format("socket") \
+        .option("host", "localhost") \
+        .option("port", 9999) \
+        .load()
+
+    # Split the data (text) into words and count each word
+    words_df = comment_stream.select(explode(split(comment_stream.value, " ")).alias("word"))
+    word_count = words_df.groupby("word").count()
+
+    # Output the result to the console
+    query = word_count.writeStream \
+        .outputMode("complete") \
+        .format("console") \
+        .start()
+
+    query.awaitTermination()
+
+def start_comment_streaming(api_key, video_id):
+    # Create a socket to send comments to
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.connect(('localhost', 9999))  # Connect to the socket at localhost:9999
+
+    # Fetch and stream YouTube comments to the socket
+    fetch_and_stream_comments(api_key, video_id, sock)
+
+if __name__ == "__main__":
+    # Start both Spark streaming and the YouTube comment streaming in separate threads
+    API_KEY = "YOUR_YOUTUBE_API_KEY"  # Replace with your actual API key
+    VIDEO_ID = "YOUR_VIDEO_ID"        # Replace with the YouTube video ID
+
+    # Start Spark streaming in a separate thread
+    spark_thread = threading.Thread(target=start_spark_streaming)
+    spark_thread.start()
+
+    # Start YouTube comment streaming in a separate thread
+    comment_thread = threading.Thread(target=start_comment_streaming, args=(API_KEY, VIDEO_ID))
+    comment_thread.start()
+
+    # Join threads to keep the program running
+    spark_thread.join()
+    comment_thread.join()
+
+Key Changes:
+
+    start_comment_streaming function:
+        Creates a socket connection to localhost:9999.
+        Calls the fetch_and_stream_comments function (from youtube_fetch_comments.py), which fetches YouTube comments and streams them to the socket.
+
+    start_spark_streaming function:
+        Reads from the socket and processes the comments in real-time using Spark structured streaming.
+
+    threading:
+        Both the Spark streaming job and the YouTube comment fetching job are run in separate threads using threading.Thread(). This ensures they run concurrently.
+
+Running the Code:
+
+    Start the Spark and YouTube Comment Streaming:
+
+    Run the following command to start the script:
+
+    python spark_structure_streaming.py
+
+    Check the Output:
+        The YouTube comments will be fetched periodically and sent to the socket.
+        Spark will read from the socket and process the data in real-time. You should see word counts printed in the Spark console.
+
+    Test the Output:
+        You should see Spark processing the words from the YouTube comments and outputting word counts in the console.
+
+How It Works:
+
+    YouTube Comments are fetched every 10 seconds (or however frequently you choose) using the fetch_and_stream_comments function.
+    Spark Structured Streaming reads those comments from the socket (localhost:9999) and processes them in real-time to count the occurrences of words.
+    Both processes (fetching comments and streaming them into Spark) run concurrently in separate threads.
+
+Summary:

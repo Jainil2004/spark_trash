@@ -1,0 +1,107 @@
+No problem at all! Let's first make sure that your Spark Structured Streaming code can read from a socket (i.e., whatever you type in the terminal using nc on port 9999) and process it. We’ll handle the YouTube comments later.
+
+To focus on the immediate goal — processing data typed into the terminal — let's break down the steps:
+
+    Set up a socket listener on port 9999 using nc (Netcat).
+    Modify your spark_structure_streaming.py to ensure it properly streams data from that socket and processes it.
+
+Here’s how to do that:
+Step 1: Set up the Socket with nc
+
+In your terminal, run this command to open a socket listener on port 9999:
+
+nc -lk 9999
+
+This will open a listener on localhost (127.0.0.1) at port 9999. Anything you type in this terminal window will be sent to any application that connects to port 9999.
+Step 2: Adjust the Spark Streaming Code
+
+Your Spark application (spark_structure_streaming.py) needs to listen on that same port (9999) and process the incoming data.
+
+Let’s adjust spark_structure_streaming.py so it can correctly read and process the input from the terminal.
+
+Here’s the updated code:
+spark_structure_streaming.py
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import explode, split
+
+def start_streaming():
+    # Start Spark session
+    spark = SparkSession.builder.appName("StreamApp").getOrCreate()
+
+    # Read data from the socket on localhost:9999
+    comment_stream = spark.readStream \
+        .format("socket") \
+        .option("host", "localhost") \
+        .option("port", 9999) \
+        .load()
+
+    # Split the data (text) into words and count each word
+    words_df = comment_stream.select(explode(split(comment_stream.value, " ")).alias("word"))
+    word_count = words_df.groupby("word").count()
+
+    # Output the result to the console
+    query = word_count.writeStream \
+        .outputMode("complete") \
+        .format("console") \
+        .start()
+
+    query.awaitTermination()
+
+Explanation of the Spark Streaming Code:
+
+    Spark Session: Starts a Spark session using SparkSession.builder.appName("StreamApp").getOrCreate().
+    Socket Stream: Reads data from the socket at localhost:9999 using spark.readStream. This allows Spark to listen for incoming data on that port.
+    Word Count: The split function splits each line of text into words, and the explode function flattens the list of words. We then group by word and count the occurrences.
+    Output: The result is printed to the console using word_count.writeStream.format("console").
+
+Step 3: Run the Spark Streaming Code
+
+    Start your Spark app by running the following command:
+
+python spark_structure_streaming.py
+
+Start the socket listener with Netcat (nc), as mentioned earlier:
+
+nc -lk 9999
+
+This will open a listener on port 9999.
+
+Type text into the terminal where nc is running. For example:
+
+hello world hello spark
+
+Check the output: If everything is set up correctly, your Spark app should begin processing the input and outputting word counts to the console. You’ll see something like this:
+
+    +-----+-----+
+    | word|count|
+    +-----+-----+
+    |hello|    2|
+    |world|    1|
+    |spark|    1|
+    +-----+-----+
+
+Step 4: Testing
+
+    Every time you type something in the nc terminal (and press Enter), Spark will process that text and update the word counts.
+
+    If you type:
+
+hello world hello
+
+The output on the Spark app will update to show:
+
+    +-----+-----+
+    | word|count|
+    +-----+-----+
+    |hello|    2|
+    |world|    1|
+    +-----+-----+
+
+Step 5: Troubleshooting
+
+    If you're not seeing output, make sure your Spark job is still running and that you've properly connected the socket (nc and the Spark app should both be running).
+    If the terminal becomes unresponsive after starting nc, make sure the Spark job is actively processing.
+    If you’re running the Spark job and it’s hanging indefinitely, make sure you’re using the right Spark version and have it correctly configured with the necessary dependencies.
+
+
